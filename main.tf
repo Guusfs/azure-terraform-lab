@@ -3,48 +3,40 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~>3.0" 
+      version = "~>3.0"
     }
   }
 }
 
 # Configuração do Provedor Azure
-# Ele vai usar a conta que você logou com "az login"
 provider "azurerm" {
   features {}
 }
 
-# ---------------------------------------------------
-# Este é o nosso primeiro recurso.
-# Um "Resource Group" (Grupo de Recursos) é um 
-# container lógico para agrupar recursos do Azure.
-# ---------------------------------------------------
+# --- Bloco 1: Grupo de Recursos ---
 resource "azurerm_resource_group" "rg_estudos" {
-  name     = "rg-terraform-estudos-gustavo" # Coloquei um nome único
-  # location = "Brazil South" # <-- REGIÃO SEM CAPACIDADE
-  location = "East US 2"      # <-- MUDANDO PARA UMA REGIÃO MAIOR
+  name     = "rg-terraform-estudos-gustavo"
+  location = "East US 2" # Região com alta disponibilidade
 
   tags = {
-    ambiente = "estudos"
-    owner    = "gustavo"
+    ambiente   = "estudos"
+    owner      = "gustavo"
     criado_com = "terraform"
   }
 }
-# --- Bloco 2: Rede Virtual (VNet) ---
-# A rede principal onde nossos recursos vão morar.
 
+# --- Bloco 2: Rede Virtual (VNet) ---
 resource "azurerm_virtual_network" "vnet_estudos" {
   name                = "vnet-principal-estudos"
   location            = azurerm_resource_group.rg_estudos.location
   resource_group_name = azurerm_resource_group.rg_estudos.name
-  address_space       = ["10.10.0.0/16"] # O "bairro" inteiro (65.536 IPs)
+  address_space       = ["10.10.0.0/16"]
 
   tags = {
     ambiente = "estudos"
     owner    = "gustavo"
   }
 }
-
 
 # --- Bloco 3: Sub-rede (Subnet) ---
 resource "azurerm_subnet" "subnet_web" {
@@ -52,29 +44,38 @@ resource "azurerm_subnet" "subnet_web" {
   resource_group_name  = azurerm_resource_group.rg_estudos.name
   virtual_network_name = azurerm_virtual_network.vnet_estudos.name
   address_prefixes     = ["10.10.1.0/24"]
-  
-  # APAGUE A LINHA "network_security_group_id = ..." DAQUI
 }
 
 # --- Bloco 4: Grupo de Segurança de Rede (NSG) ---
-# Este é o nosso "Firewall" para a sub-rede.
-
 resource "azurerm_network_security_group" "nsg_web" {
   name                = "nsg-servidores-web"
   location            = azurerm_resource_group.rg_estudos.location
   resource_group_name = azurerm_resource_group.rg_estudos.name
 
-  # Aqui definimos as regras de entrada (inbound)
+  # Regra 1: Permitir SSH (porta 22) para podermos conectar
   security_rule {
-    name                       = "AllowRDP"
-    priority                   = 1001       # Ordem da regra (menor = mais importante)
+    name                       = "AllowSSH"
+    priority                   = 1001
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
-    source_port_range          = "*"        # Qualquer porta de origem
-    destination_port_range     = "3389"     # A porta do RDP
-    source_address_prefix      = "Internet" # De qualquer lugar da internet
-    destination_address_prefix = "*"        # Para qualquer IP dentro da sub-rede
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+
+  # Regra 2: Permitir o tráfego do nosso site Docker (porta 80)
+  security_rule {
+    name                       = "AllowWeb"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
   }
 
   tags = {
@@ -84,22 +85,17 @@ resource "azurerm_network_security_group" "nsg_web" {
 }
 
 # --- Bloco 5: Associação do NSG com a Sub-rede ---
-# Este é o "elo de ligação" que conecta o Bloco 3 (Subnet)
-# com o Bloco 4 (NSG).
-
 resource "azurerm_subnet_network_security_group_association" "assoc_nsg_subnet" {
   subnet_id                 = azurerm_subnet.subnet_web.id
   network_security_group_id = azurerm_network_security_group.nsg_web.id
 }
 
 # --- Bloco 6: IP Público (PIP) ---
-# O endereço IP estático da nossa VM na internet.
-
 resource "azurerm_public_ip" "pip_vm" {
-  name                = "pip-vm-windows"
+  name                = "pip-vm-linux" # Mudei o nome para refletir o Linux
   location            = azurerm_resource_group.rg_estudos.location
   resource_group_name = azurerm_resource_group.rg_estudos.name
-  allocation_method   = "Static" # Queremos que o IP não mude
+  allocation_method   = "Static"
   sku                 = "Standard"
 
   tags = {
@@ -109,44 +105,36 @@ resource "azurerm_public_ip" "pip_vm" {
 }
 
 # --- Bloco 7: Placa de Rede (NIC) ---
-# A placa de rede virtual que conecta tudo.
-
 resource "azurerm_network_interface" "nic_vm" {
-  name                = "nic-vm-windows"
+  name                = "nic-vm-linux" # Mudei o nome para refletir o Linux
   location            = azurerm_resource_group.rg_estudos.location
   resource_group_name = azurerm_resource_group.rg_estudos.name
 
-  # A configuração de IP
   ip_configuration {
     name                          = "ipconfig-vm"
-    # Conecta na nossa sub-rede (Bloco 3)
     subnet_id                     = azurerm_subnet.subnet_web.id
     private_ip_address_allocation = "Dynamic"
-    # Conecta no nosso IP público (Bloco 6)
     public_ip_address_id          = azurerm_public_ip.pip_vm.id
   }
 }
 
-# --- Bloco 8: A Máquina Virtual (Windows) ---
+# --- Bloco 8: A Máquina Virtual (Linux Ubuntu) ---
+resource "azurerm_linux_virtual_machine" "vm_linux" {
+  name                  = "vm-servidor-docker-01"
+  computer_name         = "vm-docker-01"
+  location              = azurerm_resource_group.rg_estudos.location
+  resource_group_name   = azurerm_resource_group.rg_estudos.name
+  size                  = "Standard_B1s" # VM barata
+  admin_username        = "gustavoadmin"
+  disable_password_authentication = true # Força o uso da chave SSH (mais seguro)
 
-resource "azurerm_windows_virtual_machine" "vm_windows" {
-  name                = "vm-servidor-web-01"
-  computer_name       = "vmweb01"  # <-- ESTA É A CORREÇÃO (um nome curto < 15)
-  location            = azurerm_resource_group.rg_estudos.location
-  resource_group_name = azurerm_resource_group.rg_estudos.name
-  size                = "Standard_B1s" 
-  # size                = "Standard_B2s" # ESTAVA SEM ESTOQUE
-  # size                = "Standard_DS1_v2" # ESTAVA SEM ESTOQUE
-  # =========================================================
-  # !! ATENÇÃO AQUI !!
-  # Defina seu usuário e senha. A senha do Azure exige:
-  # 12+ caracteres, Maiúscula, minúscula, número e símbolo.
-  #
-  admin_username = "estudodevops"
-  admin_password = "var.vm_admin_password" # <-- TROQUE ESTA SENHA!
-  # =========================================================
-  
-  # Conecta na nossa placa de rede (Bloco 7)
+  # A Chave SSH que você gerou
+  admin_ssh_key {
+    username   = "gustavoadmin"
+    public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDVrurFONufUIVHRMos+TwQLMt85aFOFEjv6O7Gar/qvTmMajvcrO37TSx5mhkmt4oZnfTbpPeRspN8nf90H/Y5VeSiK2g6jWbm19k3ygUA0tJ+f7BnGlIawsCAwr74pduQf1/4Dpu3yqIC2zMn/rIPQZ/tZUysnsjVsZ1m8fznG7nIkI6s+DaJevve/goEIYxtIZy2DkQuAH5BeV+jf4msHY7GH0A3R4QMkd4wqwi7dM324MOzQDgkCHZINpe7xpS6VX2COFWlg9uTE+4Dk51dHpTuF6/BbfXDpfyHCL8KdMOrHGZTBuaDnj2lgSmg9kBYfHsJ8RcwE6Wkoa7dg52wqdHnYqTIlFaVlKmzSZPHg2titKcppkYicYZSEBO85dyLuXhF9Y7h9gZmUwJ5eBQ9/ldDPonmhTqwHxFRIbfRH8a8GC8NYHeSez51+3GX54ybuMIszbT9p4ohJIJ0OSNJ8EkrH33AlnR9eJxzzzrCDtxJ/WIdp4G1sm6oCUnmk9cTk0OcOZFM8oAbFos/ztN0PQYLSCySvsC7AlWaNBAip9zPtNjCBE5eBRlrDuv6uD6yi02yFBkwEuGqBlaYo7tcpq58QvMbJYV5mEcdx/7JLwGPcav8PNW6eLd+C0K4QnkwnBhKRnT52JE9WZsDeDQk+w19RTL+p6/UNDiZIZsGYQ== Gustavo S@Gustavo-Homecd /c/azure-terraform-lab"
+  }
+
+  # Conecta na nossa placa de rede
   network_interface_ids = [
     azurerm_network_interface.nic_vm.id,
   ]
@@ -154,22 +142,34 @@ resource "azurerm_windows_virtual_machine" "vm_windows" {
   # O disco do Sistema Operacional
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS" # Disco HDD, mais barato para lab
+    storage_account_type = "Standard_LRS"
   }
 
-  # A Imagem do Windows (Marketplace)
+  # A Imagem do Linux (Marketplace)
   source_image_reference {
-    publisher = "MicrosoftWindowsServer"
-    offer     = "WindowsServer"
-    sku       = "2019-Datacenter"
+    publisher = "Canonical"
+    offer     = "UbuntuServer"
+    sku       = "18.04-LTS"
     version   = "latest"
   }
+
+  # --- O PROJETO FINAL: UNINDO TERRAFORM + DOCKER ---
+  # Este script roda na primeira vez que a VM liga.
+  custom_data = base64encode(<<-EOF
+    #!/bin/bash
+    sudo apt-get update -y
+    sudo apt-get install -y docker.io
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    
+    # Mapeia a porta 80 (padrão web) para a porta 8000 (do seu app)
+    sudo docker run -d -p 80:8000 guusoares/meu-primeiro-app
+  EOF
+  )
 }
 
 # --- Bloco 9: Saída (Output) ---
-# Isso fará o Terraform mostrar o IP público no final.
-
-output "ip_publico_vm_windows" {
-  value = azurerm_public_ip.pip_vm.ip_address
-  description = "O IP publico para conectar via RDP."
+output "ip_publico_vm_linux" {
+  value       = azurerm_public_ip.pip_vm.ip_address
+  description = "O IP publico para acessar o site Dockerizado."
 }
