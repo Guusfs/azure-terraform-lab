@@ -1,63 +1,85 @@
-Projeto DevOps: Pipeline IaC (Terraform) + App Dockerizado no Azure
-Este é um projeto de estudo completo da minha transição de carreira de Suporte de TI para Cloud/DevOps. O objetivo é demonstrar um ciclo "IaC" (Infra as Code) e "Deploy" básico.
+# ☁️ Azure Infrastructure Automation: Terraform + Docker
 
-O pipeline: O Terraform provisiona uma VM Linux no Azure que, ao iniciar, instala o Docker e executa uma aplicação Python que eu mesmo "conteinerizei" e publiquei no Docker Hub.
+> **Projeto de Portfólio:** Pipeline de Infraestrutura como Código (IaC) simulando um cenário real de deploy automatizado.
+>
+> **Status:** Concluído ✅
 
-O que este código faz?
-Este script Terraform provisiona uma infraestrutura de nuvem completa e funcional no Azure.
+---
 
-Fluxo de Execução:
+## 🎯 Visão Geral
+Este projeto marca minha transição técnica de **Suporte N2 para DevOps**. O objetivo foi construir um ciclo completo de provisionamento e deploy sem intervenção manual, aplicando conceitos de **Imutabilidade** e **Automação**.
 
-Infra (Terraform): O Terraform cria uma VNet, uma Sub-rede, um IP Público e uma VM Linux (Ubuntu).
+O script provisiona uma infraestrutura completa no **Microsoft Azure** e realiza o bootstrap de uma aplicação conteinerizada.
 
-Segurança (Terraform): Um NSG é criado e associado à sub-rede, liberando as portas 22 (SSH) e 80 (HTTP).
+### 🛠️ Tech Stack
+* **Terraform (IaC):** Orquestração e gerenciamento de estado.
+* **Microsoft Azure:** Provedor de Nuvem (Compute & Network).
+* **Docker:** Containerização da aplicação.
+* **Linux (Ubuntu):** Sistema Operacional base.
+* **Bash/Cloud-Init:** Scripts de automação pós-provisionamento.
 
-Provisionamento (Terraform custom_data): Na primeira inicialização da VM, um script custom_data é executado para:
+---
 
-Instalar o Docker (docker.io).
+## ⚙️ Arquitetura e Fluxo de Execução
 
-Iniciar o serviço do Docker.
+O código Terraform executa as seguintes etapas automaticamente:
 
-Executar o comando docker run -d -p 80:8000 guusoares/meu-primeiro-app.
+1.  **Infraestrutura:** Criação de Resource Group, VNet, Subnet e IP Público dinâmico.
+2.  **Segurança (Network Security Group):** Configuração de regras de firewall liberando apenas portas críticas:
+    * `22` (SSH) - Para gerenciamento.
+    * `80` (HTTP) - Para acesso à aplicação web.
+3.  **Computação:** Provisionamento de VM Linux (Ubuntu).
+4.  **Bootstrap (Custom Data):** Na primeira inicialização, um script injetado realiza:
+    * Instalação do Docker Engine.
+    * Pull da imagem `guusoares/meu-primeiro-app` do Docker Hub.
+    * Execução do container expondo a aplicação na porta 80.
 
-Resultado: Em ~5 minutos, o IP público da VM está servindo meu site "Olá, Gustavo!", que está rodando de dentro de um contêiner Docker.
+**Fluxo Simplificado:**
+`[Terraform]` ➔ `[Azure API]` ➔ `[VM Linux]` ➔ `[Docker Install]` ➔ `[App Live 🚀]`
 
-Diagrama de Arquitetura Simples: [Seu PC (Terraform)] -> [Azure API] -> [VM Linux] -> [Script custom_data] -> [docker run guusoares/meu-primeiro-app] -> [Site no Ar (Porta 80)]
+---
 
-Desafios de Troubleshooting Enfrentados
-Durante este laboratório, enfrentei vários problemas do mundo real que exigiram troubleshooting:
+## 🔧 Desafios Reais & Troubleshooting (Lessons Learned)
 
-SkuNotAvailable (Falta de Estoque): A região Brazil South estava sem capacidade para 3 tipos diferentes de VM (B1s, DS1_v2, B2s). A solução foi refatorar o código para migrar toda a infraestrutura para a região East US 2.
+Durante o desenvolvimento deste laboratório, enfrentei e solucionei problemas comuns do dia a dia de engenharia:
 
-Chave SSH não suportada: O Azure não aceitou a chave padrão ed25519 gerada pelo meu ssh-keygen. A solução foi forçar a geração de uma chave RSA (ssh-keygen -t rsa -b 4096), que é o padrão suportado.
+* ❌ **Erro: SkuNotAvailable (Capacidade de Região)**
+    * **Cenário:** A região `Brazil South` estava sem capacidade para VMs da família B e D (falta de estoque físico no Azure).
+    * **Solução:** Refatoração do código para parametrizar a região e migração completa dos recursos para `East US 2`.
 
-PlatformImageNotFound (Imagem não encontrada): O Azure não encontrou o sku "20.04-LTS" do Ubuntu na região East US 2. A solução foi alterar o sku para a versão 18.04-LTS, que é mais comum.
+* ❌ **Erro: SSH Key Format**
+    * **Cenário:** O Azure rejeitou chaves geradas com algoritmo `ed25519` (mais moderno, porém não suportado em algumas imagens legacy).
+    * **Solução:** Geração forçada de chaves no padrão `RSA 4096` bits.
 
-Provider Inconsistent Result (Estado Corrompido): Após múltiplas falhas de apply, o arquivo de estado (.tfstate) ficou corrompido. A solução foi um "hard reset": destruir manualmente os recursos órfãos no portal do Azure e deletar o arquivo de estado local para rodar um apply limpo.
+* ❌ **Erro: PlatformImageNotFound**
+    * **Cenário:** A versão específica `20.04-LTS` do Ubuntu não estava disponível no catálogo da nova região escolhida.
+    * **Solução:** Pivoteamento para a versão `18.04-LTS` para garantir estabilidade e disponibilidade.
 
-Como Usar
-Este projeto usa chaves SSH para autenticação (o padrão da indústria), e não senhas.
+* ❌ **Erro: Terraform State Corruption**
+    * **Cenário:** Após falhas de rede durante o `apply`, o arquivo `.tfstate` ficou inconsistente com a nuvem real.
+    * **Solução:** Realizei a limpeza manual de recursos órfãos no Portal do Azure e reconstruí o estado do zero (State Reset) para garantir integridade.
 
-PowerShell
+---
 
+## 🚀 Como Executar o Projeto
+
+Pré-requisitos: Azure CLI e Terraform instalados.
+
+```bash
 # 1. Clone o repositório
-git clone https://github.com/Guusfs/azure-terraform-lab.git
+git clone [https://github.com/Guusfs/azure-terraform-lab.git](https://github.com/Guusfs/azure-terraform-lab.git)
 cd azure-terraform-lab
 
-# 2. Gere um par de chaves SSH (se você ainda não tiver)
-# O Azure exige o tipo RSA.
-ssh-keygen -t rsa -b 4096
+# 2. Gere um par de chaves SSH (Tipo RSA é obrigatório para Azure)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_azure
 
-# 3. Copie sua chave PÚBLICA
-# Abra o arquivo C:\Users\SEU_USUARIO\.ssh\id_rsa.pub com o Bloco de Notas
-# e copie o conteúdo (a linha longa "ssh-rsa AAAA...")
+# 3. Configure a chave no Terraform
+# Abra o arquivo main.tf e insira o conteúdo da sua chave pública (id_rsa_azure.pub)
+# no campo "admin_ssh_key".
 
-# 4. Cole a chave pública no main.tf
-# Abra o main.tf e cole sua chave no bloco "admin_ssh_key".
-
-# 5. Autentique-se no Azure
+# 4. Autentique-se no Azure
 az login
 
-# 6. Inicialize e Aplique o Terraform
-./terraform init
-./terraform apply
+# 5. Inicialize e Aplique a Infraestrutura
+terraform init
+terraform apply --auto-approve
